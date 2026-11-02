@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>折叠屏截图</title>
+<style>
+:root{--bg:#f2f2f4;--fg:#16161a;--card:#fff;--line:#d9d9de;--acc:#1b4dff;--mut:#6b6b75;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101013;--fg:#f1f1f4;--card:#1b1b20;--line:#33333a;--acc:#6f8bff;--mut:#9a9aa6}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;padding:16px;max-width:560px;margin-inline:auto}
+h1{font-size:20px;margin:4px 0 14px;font-weight:700}
+.stage{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;justify-content:center}
+canvas{max-width:100%;height:auto;max-height:62vh;display:block}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.lab{font-size:13px;color:var(--mut);width:64px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button,.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);padding:8px 12px;border-radius:10px;font-size:14px}
+.seg button.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+.big{display:flex;gap:8px;margin-top:14px}
+.big .btn{flex:1;padding:13px;font-size:15px;text-align:center}
+.pri{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.pick{position:relative;overflow:hidden}
+.pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:0}
+.msg{font-size:13px;color:var(--mut);margin-top:10px;min-height:18px}
+</style>
+</head>
+<body>
+<h1>折叠屏截图</h1>
+<div class="stage"><canvas id="c"></canvas></div>
+
+<div class="row"><span class="lab">屏幕</span><div class="seg" data-k="mode">
+<button data-v="inner" class="on">内屏（展开）</button><button data-v="outer">外屏</button></div></div>
+<div class="row"><span class="lab">填充</span><div class="seg" data-k="fit">
+<button data-v="blur" class="on">模糊铺底</button><button data-v="contain">居中</button><button data-v="cover">铺满裁切</button></div></div>
+<div class="row"><span class="lab">边框</span><div class="seg" data-k="color">
+<button data-v="#0c0c0e" class="on">曜黑</button><button data-v="#c9ccd1">银</button><button data-v="#1d2a44">深蓝</button></div></div>
+<div class="row"><span class="lab">状态栏</span><div class="seg" data-k="bar"><button data-v="0" class="on">自动隐藏</button><button data-v="1">显示</button></div></div>
+<div class="row"><span class="lab">折痕</span><div class="seg" data-k="crease"><button data-v="1" class="on">显示</button><button data-v="0">隐藏</button></div></div>
+
+<div class="big">
+<div class="btn pri pick" id="pL"><span id="tL">左屏截图</span><input id="fL" type="file" accept="image/*"></div>
+<div class="btn pri pick" id="pR"><span id="tR">右屏截图</span><input id="fR" type="file" accept="image/*"></div>
+</div>
+<div class="big">
+<button class="btn" id="swap">左右互换</button>
+<button class="btn" id="save">保存图片</button>
+</div>
+<div class="msg" id="msg">内屏：选两张截图，分别放进左屏和右屏。</div>
+
+<script>
+const S={mode:'inner',fit:'blur',color:'#0c0c0e',bar:'0',crease:'1'};
+const imgs={L:null,R:null};
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),msg=document.getElementById('msg');
+const K=2,M=40;
+function geo(){return S.mode==='inner'?{SW:1092,SH:984,B:28,R:38,FR:64}:{SW:560,SH:1306,B:26,R:56,FR:84}}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function pane(im,x,y,w,h,label){
+  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+  if(!im){
+    ctx.fillStyle='#16161a';ctx.fillRect(x,y,w,h);
+    ctx.fillStyle='#8a8a96';ctx.font='34px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,x+w/2,y+h/2);
+  }else{
+    ctx.fillStyle='#000';ctx.fillRect(x,y,w,h);
+    const iw=im.width,ih=im.height,cover=Math.max(w/iw,h/ih),contain=Math.min(w/iw,h/ih);
+    const put=s=>ctx.drawImage(im,x+(w-iw*s)/2,y+(h-ih*s)/2,iw*s,ih*s);
+    if(S.fit==='cover')put(cover);
+    else{
+      if(S.fit==='blur'){try{ctx.filter='blur(30px) brightness(.7)'}catch(e){}put(cover*1.2);ctx.filter='none'}
+      put(contain);
+    }
+  }
+  ctx.restore();
+}
+function draw(){
+  const g=geo(),{SW,SH,B,R,FR}=g,FW=SW+B*2,FH=SH+B*2,W=FW+M*2,H=FH+M*2;
+  cv.width=W*K;cv.height=H*K;
+  ctx.setTransform(K,0,0,K,0,0);
+  ctx.save();ctx.shadowColor='rgba(0,0,0,.35)';ctx.shadowBlur=40;ctx.shadowOffsetY=14;
+  ctx.fillStyle=S.color;rr(M,M,FW,FH,FR);ctx.fill();ctx.restore();
+  ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=2;rr(M+1,M+1,FW-2,FH-2,FR-1);ctx.stroke();
+  const sx=M+B,sy=M+B,inner=S.mode==='inner';
+  ctx.save();rr(sx,sy,SW,SH,R);ctx.clip();
+  if(inner){pane(imgs.L,sx,sy,SW/2,SH,'左屏');pane(imgs.R,sx+SW/2,sy,SW/2,SH,'右屏')}
+  else pane(imgs.L,sx,sy,SW,SH,'外屏');
+  if(S.bar==='1'){
+    ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=6;ctx.fillStyle='#fff';ctx.strokeStyle='#fff';
+    ctx.font='600 28px sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
+    const d=new Date();ctx.fillText(d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'),sx+36,sy+38);
+    const bx=inner?sx+SW-150:sx+SW-40;
+    ctx.fillRect(bx-86,sy+44,6,10);ctx.fillRect(bx-74,sy+38,6,16);ctx.fillRect(bx-62,sy+32,6,22);ctx.fillRect(bx-50,sy+26,6,28);
+    ctx.lineWidth=3;rr(bx-30,sy+26,46,26,7);ctx.stroke();ctx.fillRect(bx-26,sy+30,30,18);ctx.fillRect(bx+18,sy+34,4,10);
+    ctx.shadowBlur=0;
+  }
+  if(inner&&S.crease==='1'){
+    const cx=sx+SW/2,gr=ctx.createLinearGradient(cx-18,0,cx+18,0);
+    gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(.42,'rgba(0,0,0,.22)');
+    gr.addColorStop(.5,'rgba(255,255,255,.10)');gr.addColorStop(.58,'rgba(0,0,0,.18)');gr.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=gr;ctx.fillRect(cx-18,sy,36,SH);
+  }
+  ctx.restore();
+  const hx=inner?sx+SW-62:sx+SW/2,hy=sy+38;
+  ctx.fillStyle='#050507';ctx.beginPath();ctx.arc(hx,hy,inner?13:15,0,7);ctx.fill();
+  ctx.strokeStyle='rgba(120,130,170,.35)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(hx,hy,7,0,7);ctx.stroke();
+}
+function labels(){
+  const inner=S.mode==='inner';
+  document.getElementById('pR').style.display=inner?'':'none';
+  document.getElementById('tL').textContent=(inner?'左屏截图':'外屏截图')+(imgs.L?' ✓':'');
+  document.getElementById('tR').textContent='右屏截图'+(imgs.R?' ✓':'');
+  msg.textContent=inner?'内屏：选两张截图，分别放进左屏和右屏。':'外屏：选一张截图。';
+}
+document.querySelectorAll('.seg').forEach(g=>g.addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  S[g.dataset.k]=b.dataset.v;if(g.dataset.k==='mode')labels();draw();
+}));
+function load(id,slot){
+  document.getElementById(id).addEventListener('change',e=>{
+    const f=e.target.files[0];if(!f)return;
+    const im=new Image();
+    im.onload=()=>{imgs[slot]=im;labels();draw();msg.textContent='已更新，可调整选项后保存。'};
+    im.onerror=()=>{msg.textContent='这张图读取失败，换一张试试。'};
+    im.src=URL.createObjectURL(f);
+  });
+}
+load('fL','L');load('fR','R');
+document.getElementById('swap').addEventListener('click',()=>{[imgs.L,imgs.R]=[imgs.R,imgs.L];labels();draw()});
+document.getElementById('save').addEventListener('click',()=>{
+  if(!imgs.L&&!imgs.R){msg.textContent='先选截图。';return}
+  cv.toBlob(blob=>{
+    const u=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=u;a.download='fold-screenshot.png';document.body.appendChild(a);a.click();a.remove();
+    msg.textContent='已开始保存，请到「下载」或相册里找 fold-screenshot.png。';
+    setTimeout(()=>URL.revokeObjectURL(u),30000);
+  },'image/png');
+});
+labels();draw();
+</script>
+</body>
+</html>
